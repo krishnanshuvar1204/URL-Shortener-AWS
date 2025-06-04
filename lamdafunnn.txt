@@ -1,0 +1,60 @@
+import json
+import boto3
+import random
+import string
+
+# Initialize DynamoDB client
+dynamodb = boto3.client("dynamodb", region_name="ap-south-1")  
+
+# Function to generate a random short URL key
+def generate_short_code(length=6):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+def lambda_handler(event, context):
+    body = json.loads(event["body"]) if "body" in event else event
+
+    if "long_url" not in body:
+        return {"statusCode": 400, "body": json.dumps({"error": "Missing 'long_url' in request body"})}
+
+    long_url = body["long_url"]
+    short_code = generate_short_code()
+
+    # Store in DynamoDB
+    dynamodb.put_item(
+        TableName="ShortenedURLs",
+        Item={
+            "short_url": {"S": short_code},
+            "long_url": {"S": long_url}
+        }
+    )
+
+    short_url = f"https://f468z6za1e.execute-api.ap-south-1.amazonaws.com/{short_code}"  # Replace with your domain
+
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"short_url": short_url})
+    }
+
+
+def lambda_handler(event, context):
+    # Extract the shortcode from the path parameters
+    shortcode = event["pathParameters"]["shortcode"]
+
+    # Retrieve the long URL from DynamoDB
+    response = dynamodb.get_item(
+        TableName="ShortenedURLs",
+        Key={"short_url": {"S": shortcode}}
+    )
+
+    if "Item" not in response:
+        return {"statusCode": 404, "body": json.dumps({"error": "Short URL not found"})}
+
+    long_url = response["Item"]["long_url"]["S"]
+
+    # Redirect to the original long URL
+    return {
+        "statusCode": 301,
+        "headers": {
+            "Location": long_url  # This header will cause a redirect to the long URL
+        }
+    }
